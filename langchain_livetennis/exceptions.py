@@ -16,7 +16,7 @@ class LiveTennisAuthError(LiveTennisAPIError):
     """HTTP 401 - the key is missing, unknown, or disabled.
 
     The API answers a keyless request with ``{"error": "unauthorized"}``. Get a
-    free key (1,000 requests/day) at https://livetennisapi.com/subscribe/free.
+    free key (100 requests/day) at https://livetennisapi.com/subscribe/free.
     """
 
 

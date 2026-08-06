@@ -16,7 +16,7 @@ pip install -U langchain-livetennis
 
 ## Credentials
 
-Get a free key (1,000 requests/day) at
+Get a free key (100 requests/day) at
 <https://livetennisapi.com/subscribe/free>, then:
 
 ```bash

@@ -26,7 +26,7 @@ class LiveTennisToolkit(BaseToolkit):
             pip install -U langchain-livetennis
             export LIVETENNISAPI_KEY="your-key"
 
-        Free keys (1,000 requests/day) are at
+        Free keys (100 requests/day) are at
         https://livetennisapi.com/subscribe/free.
 
     Instantiate:

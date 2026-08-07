@@ -420,8 +420,9 @@ class LiveTennisFixturesTool(_LiveTennisBaseTool):
     name: str = "live_tennis_fixtures"
     description: str = (
         "List upcoming tennis fixtures, earliest first, with the date, "
-        "tournament, round, surface and both player names. Use it to answer "
-        "'what is scheduled next'. Returns JSON."
+        "tournament, round, surface and both player names, optionally "
+        "filtered to one tour. Use it to answer 'what is scheduled next'. "
+        "Returns JSON."
     )
     args_schema: type[BaseModel] = LiveTennisFixturesInput
 

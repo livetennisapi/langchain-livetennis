@@ -135,6 +135,104 @@ FIXTURES: list[dict[str, Any]] = [
     }
 ]
 
+H2H: dict[str, Any] = {
+    "p1": {"name": "Carlos Alcaraz"},
+    "p2": {"name": "Jannik Sinner"},
+    "totals": {"p1_wins": 6, "p2_wins": 4, "undecided": 0},
+    "meetings": [
+        {
+            "date": "2026-06-08",
+            "tournament": "Roland Garros",
+            "winner": 1,
+            "outcome": "completed",
+        }
+    ],
+}
+
+ARCHIVE_MATCHES: list[dict[str, Any]] = [
+    {
+        "id": 501,
+        "tour": "atp",
+        "event_date": "1980-07-01",
+        "tournament": "Wimbledon",
+        "round": "F",
+        "level": "G",
+        "winner": {"player_id": 9001, "name": "Bjorn Borg", "rank": 1},
+        "loser": {"player_id": 9002, "name": "John McEnroe", "rank": 2},
+        "score": "1-6 7-5 6-3 6-7 8-6",
+        "stats": None,
+    }
+]
+
+ARCHIVE_PLAYERS: list[dict[str, Any]] = [
+    {
+        "id": 9001,
+        "tour": "atp",
+        "name": "Bjorn Borg",
+        "hand": "R",
+        "country": "swe",
+        "career_high_rank": 1,
+    }
+]
+
+ARCHIVE_CAREER: dict[str, Any] = {
+    "player": {"id": 9001, "name": "Bjorn Borg", "tour": "atp"},
+    "record": {"wins": 654, "losses": 140},
+    "titles": 66,
+    "serve": {"matches_with_stats": 0},
+}
+
+RANKING_LIST_SYSTEMS = {"atp", "wta", "itf_jt", "itf_mt", "itf_wt"}
+
+RANKINGS: list[dict[str, Any]] = [
+    {
+        "system": "atp",
+        "rank": 1,
+        "previous_rank": 1,
+        "points": 11500,
+        "player_id": 5533,
+        "player_name": "Jannik Sinner",
+        "effective_date": "2026-08-03",
+    },
+    {
+        "system": "atp",
+        "rank": 2,
+        "previous_rank": 2,
+        "points": 8850,
+        "player_id": 4021,
+        "player_name": "Carlos Alcaraz",
+        "effective_date": "2026-08-03",
+    },
+]
+
+STATISTICS: dict[str, Any] = {
+    "match_id": 18953,
+    "coverage": "live",
+    "players": {
+        "p1": {"hold_pct": 88.9, "measured": {"aces": 7, "double_faults": 1}},
+        "p2": {"hold_pct": 80.0, "measured": {"aces": 11, "double_faults": 3}},
+    },
+    "freshness": {
+        "derived": {"coverage": "live", "age_seconds": 4},
+        "measured": {"coverage": "live", "age_seconds": 21},
+    },
+}
+
+CHARTING_PLAYER: dict[str, Any] = {
+    "player": {"name": "Roger Federer", "gender": "men"},
+    "matches_charted": 622,
+    "coverage": "curated",
+    "families": {"serve_direction": {"deuce_wide": 1042}},
+}
+
+CHARTING_MATCH: dict[str, Any] = {
+    "charting_match_id": 77001,
+    "mcp_id": "20080706-M-Wimbledon-F-Roger_Federer-Rafael_Nadal",
+    "gender": "men",
+    "players": {"p1": "Roger Federer", "p2": "Rafael Nadal"},
+    "families": {"serve_basics": {"p1": {"aces": 25}, "p2": {"aces": 6}}},
+}
+
 
 def _json(
     status: int, payload: Any, headers: dict[str, str] | None = None
@@ -160,7 +258,8 @@ def handler(request: httpx.Request) -> httpx.Response:
 
     path = urlparse(str(request.url)).path
     path = path.split("/api/public/v1", 1)[-1] or "/"
-    query = {k: v[0] for k, v in parse_qs(urlparse(str(request.url)).query).items()}
+    multi = parse_qs(urlparse(str(request.url)).query)
+    query = {k: v[0] for k, v in multi.items()}
     limit = int(query["limit"]) if "limit" in query else None
 
     if path == "/matches":
@@ -175,7 +274,94 @@ def handler(request: httpx.Request) -> httpx.Response:
         items = [
             m for m in MATCHES if tour is None or m["players"]["p1"]["tour"] == tour
         ]
+        if "player" in multi:
+            wanted = {int(value) for value in multi["player"]}
+            items = [
+                m
+                for m in items
+                if {m["players"]["p1"]["id"], m["players"]["p2"]["id"]} & wanted
+            ]
+        if "country" in query:
+            if len(query["country"]) != 3:
+                return _json(400, {"error": "bad_country"})
+            code = query["country"].lower()
+            items = [
+                m
+                for m in items
+                if code
+                in {
+                    m["players"]["p1"]["country"].lower(),
+                    m["players"]["p2"]["country"].lower(),
+                }
+            ]
         return _page(items, limit)
+
+    if path.startswith("/matches/") and path.endswith("/statistics"):
+        match_id = int(path.split("/")[2])
+        if match_id != STATISTICS["match_id"]:
+            return _json(404, {"error": "not_found"})
+        return _json(200, STATISTICS)
+
+    if path == "/h2h":
+        p1, p2 = query.get("p1", ""), query.get("p2", "")
+        if len(p1) < 3 or len(p2) < 3:
+            return _json(400, {"error": "bad_request"})
+        return _json(200, H2H)
+
+    if path == "/history/archive/matches":
+        tour = query.get("tour")
+        if tour is not None and tour not in {"atp", "wta"}:
+            return _json(400, {"error": "bad_tour"})
+        name = (query.get("name") or "").lower()
+        items = [
+            m
+            for m in ARCHIVE_MATCHES
+            if (tour is None or m["tour"] == tour)
+            and (
+                not name
+                or name in m["winner"]["name"].lower()
+                or name in m["loser"]["name"].lower()
+            )
+        ]
+        return _page(items, limit)
+
+    if path == "/history/archive/players":
+        name = (query.get("name") or "").lower()
+        items = [p for p in ARCHIVE_PLAYERS if name in p["name"].lower()]
+        return _page(items, limit)
+
+    if path == "/history/archive/career":
+        name = (query.get("name") or "").lower()
+        if len(name) < 3:
+            return _json(400, {"error": "bad_request"})
+        if name not in ARCHIVE_CAREER["player"]["name"].lower():
+            return _json(404, {"error": "not_found"})
+        return _json(200, ARCHIVE_CAREER)
+
+    if path == "/rankings":
+        if "player" in multi:
+            wanted = {int(value) for value in multi["player"]}
+            items = [r for r in RANKINGS if r["player_id"] in wanted]
+            return _page(items, limit)
+        systems = multi.get("system", [])
+        if len(systems) != 1 or systems[0] not in RANKING_LIST_SYSTEMS:
+            return _json(400, {"error": "bad_request"})
+        items = [r for r in RANKINGS if r["system"] == systems[0]]
+        return _page(sorted(items, key=lambda r: r["rank"]), limit)
+
+    if path == "/charting/players":
+        name = (query.get("name") or "").lower()
+        if len(name) < 3:
+            return _json(400, {"error": "bad_request"})
+        if name not in CHARTING_PLAYER["player"]["name"].lower():
+            return _json(404, {"error": "not_found"})
+        return _json(200, CHARTING_PLAYER)
+
+    if path.startswith("/charting/matches/"):
+        charting_id = int(path.split("/")[3])
+        if charting_id != CHARTING_MATCH["charting_match_id"]:
+            return _json(404, {"error": "not_found"})
+        return _json(200, CHARTING_MATCH)
 
     if path.startswith("/matches/") and path.endswith("/score"):
         match_id = int(path.split("/")[2])

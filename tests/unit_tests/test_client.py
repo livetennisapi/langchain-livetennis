@@ -111,6 +111,163 @@ def test_list_fixtures(client: LiveTennisClient) -> None:
     assert client.list_fixtures(limit=1)["data"][0]["id"] == 19001
 
 
+def test_matches_player_filter(client: LiveTennisClient) -> None:
+    page = client.list_matches("live", player=7710)
+    assert [m["id"] for m in page["data"]] == [18954]
+
+
+def test_matches_country_filter(client: LiveTennisClient) -> None:
+    page = client.list_matches("live", country="pol")
+    assert [m["id"] for m in page["data"]] == [18954]
+
+
+def test_matches_date_filters_are_sent_as_from_and_to() -> None:
+    seen: dict[str, str] = {}
+
+    def spy(request: httpx.Request) -> httpx.Response:
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, json={"data": [], "meta": {}})
+
+    api = LiveTennisClient(
+        api_key="k", client=httpx.Client(transport=httpx.MockTransport(spy))
+    )
+    api.list_matches("completed", from_date="2026-08-01", to_date="2026-08-07")
+    assert seen["from"] == "2026-08-01"
+    assert seen["to"] == "2026-08-07"
+
+
+def test_player_filter_is_repeated_and_capped_at_fifty() -> None:
+    sent: list[str] = []
+
+    def spy(request: httpx.Request) -> httpx.Response:
+        sent.extend(request.url.params.get_list("player"))
+        return httpx.Response(200, json={"data": [], "meta": {}})
+
+    api = LiveTennisClient(
+        api_key="k", client=httpx.Client(transport=httpx.MockTransport(spy))
+    )
+    api.list_matches("live", player=range(1, 60))
+    assert sent == [str(i) for i in range(1, 51)]
+
+
+def test_fixtures_tour_filter(client: LiveTennisClient) -> None:
+    assert client.list_fixtures(tour="atp", limit=1)["data"][0]["tour"] == "atp"
+
+
+def test_h2h(client: LiveTennisClient) -> None:
+    record = client.get_h2h("alcaraz", "sinner")
+    assert record["totals"]["p1_wins"] == 6
+    assert record["meetings"][0]["outcome"] == "completed"
+
+
+def test_h2h_short_fragment_is_a_bad_request(client: LiveTennisClient) -> None:
+    with pytest.raises(LiveTennisBadRequest):
+        client.get_h2h("al", "sinner")
+
+
+def test_archive_matches(client: LiveTennisClient) -> None:
+    page = client.list_archive_matches(tour="atp", name="borg")
+    assert page["data"][0]["winner"]["name"] == "Bjorn Borg"
+
+
+def test_archive_matches_reject_non_archive_tour(client: LiveTennisClient) -> None:
+    # The archive covers ATP and WTA only.
+    with pytest.raises(LiveTennisBadRequest):
+        client.list_archive_matches(tour="juniors")
+
+
+def test_archive_round_is_sent_as_round() -> None:
+    seen: dict[str, str] = {}
+
+    def spy(request: httpx.Request) -> httpx.Response:
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, json={"data": [], "meta": {}})
+
+    api = LiveTennisClient(
+        api_key="k", client=httpx.Client(transport=httpx.MockTransport(spy))
+    )
+    api.list_archive_matches(round_code="F", level="G")
+    assert seen["round"] == "F"
+    assert seen["level"] == "G"
+
+
+def test_archive_players(client: LiveTennisClient) -> None:
+    page = client.list_archive_players(name="borg")
+    assert page["data"][0]["career_high_rank"] == 1
+
+
+def test_archive_career(client: LiveTennisClient) -> None:
+    career = client.get_archive_career("borg")
+    assert career["record"]["wins"] == 654
+
+
+def test_archive_career_unknown_name_is_not_found(client: LiveTennisClient) -> None:
+    with pytest.raises(LiveTennisNotFound):
+        client.get_archive_career("nobody")
+
+
+def test_rankings_listing(client: LiveTennisClient) -> None:
+    page = client.list_rankings("atp")
+    assert [r["rank"] for r in page["data"]] == [1, 2]
+    assert page["data"][0]["player_name"] == "Jannik Sinner"
+
+
+def test_rankings_listing_rejects_an_unlistable_system(
+    client: LiveTennisClient,
+) -> None:
+    # UTR has no listing mode - it is a rating, not a ranking.
+    with pytest.raises(LiveTennisBadRequest):
+        client.list_rankings("utr")
+
+
+def test_player_rankings(client: LiveTennisClient) -> None:
+    page = client.get_player_rankings(4021)
+    assert page["data"][0]["player_id"] == 4021
+
+
+def test_player_rankings_multiple_ids(client: LiveTennisClient) -> None:
+    page = client.get_player_rankings([4021, 5533])
+    assert {r["player_id"] for r in page["data"]} == {4021, 5533}
+
+
+def test_player_rankings_send_system_and_as_of() -> None:
+    seen: dict[str, str] = {}
+    systems: list[str] = []
+
+    def spy(request: httpx.Request) -> httpx.Response:
+        seen.update(dict(request.url.params))
+        systems.extend(request.url.params.get_list("system"))
+        return httpx.Response(200, json={"data": [], "meta": {}})
+
+    api = LiveTennisClient(
+        api_key="k", client=httpx.Client(transport=httpx.MockTransport(spy))
+    )
+    api.get_player_rankings(4021, system=["atp", "utr"], as_of="2025-06-01")
+    assert seen["as_of"] == "2025-06-01"
+    assert systems == ["atp", "utr"]
+
+
+def test_match_statistics(client: LiveTennisClient) -> None:
+    stats = client.get_match_statistics(18953)
+    assert stats["players"]["p1"]["measured"]["aces"] == 7
+    assert stats["freshness"]["derived"]["coverage"] == "live"
+
+
+def test_charting_player(client: LiveTennisClient) -> None:
+    profile = client.get_charting_player("federer", gender="men")
+    assert profile["matches_charted"] == 622
+
+
+def test_charting_match(client: LiveTennisClient) -> None:
+    charted = client.get_charting_match(77001)
+    assert charted["players"]["p1"] == "Roger Federer"
+
+
+def test_missing_charting_match_is_not_found(client: LiveTennisClient) -> None:
+    with pytest.raises(LiveTennisNotFound):
+        client.get_charting_match(1)
+
+
 def test_keyless_request_is_unauthorized(keyless_client: LiveTennisClient) -> None:
     with pytest.raises(LiveTennisAuthError) as excinfo:
         keyless_client.list_matches("live")

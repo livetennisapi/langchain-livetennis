@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import random
 import time
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import httpx
 from typing_extensions import Self
@@ -25,6 +25,9 @@ from .exceptions import (
     LiveTennisUpgradeRequired,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
 DEFAULT_BASE_URL = "https://api.livetennisapi.com/api/public/v1"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 2
@@ -39,8 +42,21 @@ TOURS = ("atp", "wta", "challenger", "itf", "juniors")
 #: Lifecycle values the ``/matches`` endpoint accepts.
 MATCH_STATUSES = ("live", "upcoming", "completed")
 
+#: Tours the results archive (1968-2022) covers.
+ARCHIVE_TOURS = ("atp", "wta")
+
+#: Ranking systems ``/rankings`` can list in rank order (PRO mode). UTR has no
+#: listing - it is a rating, not a ranking.
+RANKING_LIST_SYSTEMS = ("atp", "wta", "itf_jt", "itf_mt", "itf_wt")
+
+#: Every ranking system, for per-player as-of reads (ULTRA mode).
+RANKING_SYSTEMS = (*RANKING_LIST_SYSTEMS, "utr")
+
 #: The API rejects a ``limit`` above this.
 MAX_LIMIT = 200
+
+#: ``player`` filters accept at most this many ids per request.
+MAX_PLAYER_IDS = 50
 
 _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 
@@ -158,6 +174,14 @@ def _clamp_limit(limit: int | None) -> int | None:
     return max(1, min(int(limit), MAX_LIMIT))
 
 
+def _id_list(value: int | Sequence[int] | None) -> list[int] | None:
+    """Normalise a repeatable id filter to a list, capped at the API maximum."""
+    if value is None:
+        return None
+    ids = [int(value)] if isinstance(value, int) else [int(item) for item in value]
+    return ids[:MAX_PLAYER_IDS] or None
+
+
 class LiveTennisClient:
     """Synchronous client for the Live Tennis API.
 
@@ -266,11 +290,35 @@ class LiveTennisClient:
         status: str = "live",
         *,
         tour: str | None = None,
+        player: int | Sequence[int] | None = None,
+        country: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
         limit: int | None = None,
     ) -> Any:
-        """``GET /matches`` - matches by lifecycle status."""
+        """``GET /matches`` - matches by lifecycle status.
+
+        Args:
+            status: ``live``, ``upcoming`` or ``completed`` (BASIC+).
+            tour: One of ``atp``, ``wta``, ``challenger``, ``itf``, ``juniors``.
+            player: Player id(s); a match qualifies when the id is either
+                participant. Repeatable, max 50.
+            country: Lowercase 3-letter IOC-style code (e.g. ``ned``, ``sui``)
+                matched against either participant's country.
+            from_date: Earliest play date, ``YYYY-MM-DD`` or ISO-8601 UTC.
+            to_date: Latest play date; must not precede ``from_date``.
+            limit: Page size, clamped to 1-200.
+        """
         return self._get(
-            "/matches", _query(status=status, tour=tour, limit=_clamp_limit(limit))
+            "/matches",
+            _query(
+                status=status,
+                tour=tour,
+                player=_id_list(player),
+                country=country,
+                limit=_clamp_limit(limit),
+                **{"from": from_date, "to": to_date},
+            ),
         )
 
     def get_match(self, match_id: int) -> Any:
@@ -291,6 +339,134 @@ class LiveTennisClient:
         """``GET /players/{id}`` - one player's bio, ranking and cached stats."""
         return self._get(f"/players/{int(player_id)}")
 
-    def list_fixtures(self, *, limit: int | None = None) -> Any:
+    def list_fixtures(
+        self, *, tour: str | None = None, limit: int | None = None
+    ) -> Any:
         """``GET /fixtures`` - upcoming scheduled fixtures, earliest first."""
-        return self._get("/fixtures", _query(limit=_clamp_limit(limit)))
+        return self._get("/fixtures", _query(tour=tour, limit=_clamp_limit(limit)))
+
+    def get_h2h(self, p1: str, p2: str) -> Any:
+        """``GET /h2h`` - head-to-head record between two players (BASIC+).
+
+        Names are the keys (min 3 chars each); a fragment matching more than
+        one player is refused with the candidate list rather than guessed.
+        """
+        return self._get("/h2h", _query(p1=p1, p2=p2))
+
+    def list_archive_matches(
+        self,
+        *,
+        tour: str | None = None,
+        name: str | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        round_code: str | None = None,
+        level: str | None = None,
+        limit: int | None = None,
+    ) -> Any:
+        """``GET /history/archive/matches`` - 1968-2022 results (BASIC+).
+
+        Args:
+            tour: ``atp`` or ``wta`` - the archive covers those two.
+            name: Case-insensitive substring on either player's name (min 3).
+            from_date: Earliest tournament start date, ``YYYY-MM-DD``.
+            to_date: Latest tournament start date.
+            round_code: Round, e.g. ``F``, ``SF``, ``QF``, ``R16``.
+            level: Source tier code (``G`` grand slam, ``M`` masters, ``A``
+                tour, ``C`` challenger, ...).
+            limit: Page size, clamped to 1-200.
+        """
+        return self._get(
+            "/history/archive/matches",
+            _query(
+                tour=tour,
+                name=name,
+                level=level,
+                limit=_clamp_limit(limit),
+                **{"from": from_date, "to": to_date, "round": round_code},
+            ),
+        )
+
+    def list_archive_players(
+        self,
+        *,
+        name: str | None = None,
+        tour: str | None = None,
+        limit: int | None = None,
+    ) -> Any:
+        """``GET /history/archive/players`` - archive player bios (BASIC+)."""
+        return self._get(
+            "/history/archive/players",
+            _query(name=name, tour=tour, limit=_clamp_limit(limit)),
+        )
+
+    def get_archive_career(self, name: str) -> Any:
+        """``GET /history/archive/career`` - career aggregates (BASIC+).
+
+        The name fragment (min 3 chars) must resolve to exactly one archive
+        person; an ambiguous fragment is refused with candidates.
+        """
+        return self._get("/history/archive/career", _query(name=name))
+
+    def list_rankings(
+        self,
+        system: str,
+        *,
+        as_of: str | None = None,
+        limit: int | None = None,
+    ) -> Any:
+        """``GET /rankings`` in listing mode - the full published table (PRO).
+
+        Args:
+            system: Exactly one of ``atp``, ``wta``, ``itf_jt``, ``itf_mt``,
+                ``itf_wt``. UTR has no listing - it is a rating, not a ranking.
+            as_of: ``YYYY-MM-DD``; returns the newest week at or before it.
+            limit: Page size, clamped to 1-200.
+        """
+        return self._get(
+            "/rankings", _query(system=system, as_of=as_of, limit=_clamp_limit(limit))
+        )
+
+    def get_player_rankings(
+        self,
+        player: int | Sequence[int],
+        *,
+        system: str | Sequence[str] | None = None,
+        as_of: str | None = None,
+    ) -> Any:
+        """``GET /rankings`` in per-player mode - as-of records (ULTRA).
+
+        Returns, per system, the newest record effective on or before
+        ``as_of`` - the point-in-time answer, not today's rank.
+
+        Args:
+            player: Player id(s), repeatable, max 50.
+            system: Restrict to one or more systems (including ``utr``).
+                Omit for all.
+            as_of: ``YYYY-MM-DD``. Omit for the latest known record.
+        """
+        systems = [system] if isinstance(system, str) else system
+        return self._get(
+            "/rankings",
+            _query(
+                player=_id_list(player),
+                system=list(systems) if systems else None,
+                as_of=as_of,
+            ),
+        )
+
+    def get_match_statistics(self, match_id: int) -> Any:
+        """``GET /matches/{id}/statistics`` - in-play statistics (ULTRA)."""
+        return self._get(f"/matches/{int(match_id)}/statistics")
+
+    def get_charting_player(self, name: str, *, gender: str | None = None) -> Any:
+        """``GET /charting/players`` - career shot-level aggregate (ULTRA).
+
+        ``name`` (min 3 chars) must resolve to one charted person;
+        ``gender`` (``men``/``women``) disambiguates.
+        """
+        return self._get("/charting/players", _query(name=name, gender=gender))
+
+    def get_charting_match(self, charting_match_id: int) -> Any:
+        """``GET /charting/matches/{id}`` - one charted match (ULTRA)."""
+        return self._get(f"/charting/matches/{int(charting_match_id)}")

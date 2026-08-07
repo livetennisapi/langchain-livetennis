@@ -9,12 +9,13 @@ from __future__ import annotations
 import os
 import random
 import time
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 from typing_extensions import Self
 
 from .exceptions import (
+    LiveTennisAbuseThrottled,
     LiveTennisAPIError,
     LiveTennisAuthError,
     LiveTennisBadRequest,
@@ -56,6 +57,15 @@ def _retry_after_seconds(headers: httpx.Headers) -> float | None:
     return value if value >= 0 else None
 
 
+def _body(response: httpx.Response) -> dict[str, Any]:
+    """The JSON object body of a response, or ``{}`` when there is none."""
+    try:
+        parsed = response.json()
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _message(response: httpx.Response) -> str:
     """Best-effort human-readable message from an error response body."""
     try:
@@ -68,6 +78,47 @@ def _message(response: httpx.Response) -> str:
             if isinstance(value, str):
                 return value
     return str(body)[:200]
+
+
+def _raise_rate_limited(response: httpx.Response, message: str) -> NoReturn:
+    """Raise the right 429: per-minute, daily cap, or the 24-hour abuse block."""
+    body = _body(response)
+    retry_after = _retry_after_seconds(response.headers)
+    if body.get("error") == "abuse_throttled":
+        retry_at_epoch = body.get("retry_at_epoch")
+        if not isinstance(retry_at_epoch, int):
+            retry_at_epoch = None
+        detail = (
+            f"{message}. 24-hour block for repeatedly exceeding the quota - "
+            "fix the retry loop rather than retrying"
+        )
+        if retry_at_epoch is not None:
+            detail += f"; the block lifts at epoch {retry_at_epoch}"
+        raise LiveTennisAbuseThrottled(
+            detail, retry_after=retry_after, retry_at_epoch=retry_at_epoch
+        )
+    resets_at = body.get("resets_at")
+    if not isinstance(resets_at, str):
+        resets_at = None
+    if resets_at is not None:
+        message = f"{message}. Daily quota exhausted; it resets at {resets_at}"
+    raise LiveTennisRateLimited(message, retry_after=retry_after, resets_at=resets_at)
+
+
+def _is_retryable(response: httpx.Response) -> bool:
+    """Whether waiting and resending could possibly change the answer.
+
+    A per-minute 429 and any 5xx can clear within a request's lifetime. A
+    daily-cap 429 (``resets_at`` in the body) and the 24-hour abuse block
+    (``abuse_throttled``) cannot, so they are surfaced immediately instead of
+    burning retries against a closed door.
+    """
+    if response.status_code not in _RETRY_STATUSES:
+        return False
+    if response.status_code != httpx.codes.TOO_MANY_REQUESTS:
+        return True
+    body = _body(response)
+    return body.get("error") != "abuse_throttled" and "resets_at" not in body
 
 
 def _raise_for_status(response: httpx.Response) -> None:
@@ -89,9 +140,7 @@ def _raise_for_status(response: httpx.Response) -> None:
     if status == httpx.codes.BAD_REQUEST:
         raise LiveTennisBadRequest(message)
     if status == httpx.codes.TOO_MANY_REQUESTS:
-        raise LiveTennisRateLimited(
-            message, retry_after=_retry_after_seconds(response.headers)
-        )
+        _raise_rate_limited(response, message)
     if status >= httpx.codes.INTERNAL_SERVER_ERROR:
         raise LiveTennisServerError(message)
     raise LiveTennisAPIError(message)
@@ -195,7 +244,7 @@ class LiveTennisClient:
                 time.sleep(self._backoff(attempt, None))
                 continue
 
-            if response.status_code in _RETRY_STATUSES and attempt < self.max_retries:
+            if _is_retryable(response) and attempt < self.max_retries:
                 time.sleep(
                     self._backoff(attempt, _retry_after_seconds(response.headers))
                 )

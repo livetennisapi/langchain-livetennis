@@ -15,6 +15,15 @@ EXPECTED_TOOL_NAMES = [
     "live_tennis_player_search",
     "live_tennis_player",
     "live_tennis_fixtures",
+    "live_tennis_h2h",
+    "live_tennis_archive_matches",
+    "live_tennis_archive_players",
+    "live_tennis_archive_career",
+    "live_tennis_rankings",
+    "live_tennis_player_rankings",
+    "live_tennis_match_statistics",
+    "live_tennis_charting_player",
+    "live_tennis_charting_match",
 ]
 
 
@@ -53,6 +62,15 @@ def test_every_toolkit_tool_can_be_invoked(client: LiveTennisClient) -> None:
         "live_tennis_player_search": {"search": "alcaraz"},
         "live_tennis_player": {"player_id": 4021},
         "live_tennis_fixtures": {"limit": 1},
+        "live_tennis_h2h": {"p1": "alcaraz", "p2": "sinner"},
+        "live_tennis_archive_matches": {"name": "borg"},
+        "live_tennis_archive_players": {"name": "borg"},
+        "live_tennis_archive_career": {"name": "borg"},
+        "live_tennis_rankings": {"system": "atp"},
+        "live_tennis_player_rankings": {"player": [4021]},
+        "live_tennis_match_statistics": {"match_id": 18953},
+        "live_tennis_charting_player": {"name": "federer"},
+        "live_tennis_charting_match": {"charting_match_id": 77001},
     }
     for name, payload in args.items():
         result = tools[name].invoke(payload)

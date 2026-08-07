@@ -8,17 +8,26 @@ from typing_extensions import Self
 
 from ._client import LiveTennisClient
 from .tools import (
+    LiveTennisArchiveCareerTool,
+    LiveTennisArchiveMatchesTool,
+    LiveTennisArchivePlayersTool,
+    LiveTennisChartingMatchTool,
+    LiveTennisChartingPlayerTool,
     LiveTennisFixturesTool,
+    LiveTennisH2HTool,
     LiveTennisMatchesTool,
+    LiveTennisMatchStatisticsTool,
     LiveTennisMatchTool,
+    LiveTennisPlayerRankingsTool,
     LiveTennisPlayerSearchTool,
     LiveTennisPlayerTool,
+    LiveTennisRankingsTool,
     LiveTennisScoreTool,
 )
 
 
 class LiveTennisToolkit(BaseToolkit):
-    """All six Live Tennis API tools, sharing one HTTP connection pool.
+    """Every Live Tennis API tool, sharing one HTTP connection pool.
 
     Setup:
         .. code-block:: bash
@@ -38,9 +47,20 @@ class LiveTennisToolkit(BaseToolkit):
             tools = toolkit.get_tools()
 
     Tools:
-        ``live_tennis_matches``, ``live_tennis_match``,
+        FREE - ``live_tennis_matches``, ``live_tennis_match``,
         ``live_tennis_match_score``, ``live_tennis_player_search``,
         ``live_tennis_player``, ``live_tennis_fixtures``.
+        BASIC+ - ``live_tennis_h2h``, ``live_tennis_archive_matches``,
+        ``live_tennis_archive_players``, ``live_tennis_archive_career``
+        (and ``status="completed"`` on ``live_tennis_matches``).
+        PRO+ - ``live_tennis_rankings``.
+        ULTRA - ``live_tennis_player_rankings``,
+        ``live_tennis_match_statistics``, ``live_tennis_charting_player``,
+        ``live_tennis_charting_match``.
+
+        A tool above the key's plan still binds and appears in
+        :meth:`get_tools`; calling it surfaces the API's 403 as a
+        ``ToolException`` naming the plan that unlocks it.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -72,4 +92,13 @@ class LiveTennisToolkit(BaseToolkit):
             LiveTennisPlayerSearchTool(client=client),
             LiveTennisPlayerTool(client=client),
             LiveTennisFixturesTool(client=client),
+            LiveTennisH2HTool(client=client),
+            LiveTennisArchiveMatchesTool(client=client),
+            LiveTennisArchivePlayersTool(client=client),
+            LiveTennisArchiveCareerTool(client=client),
+            LiveTennisRankingsTool(client=client),
+            LiveTennisPlayerRankingsTool(client=client),
+            LiveTennisMatchStatisticsTool(client=client),
+            LiveTennisChartingPlayerTool(client=client),
+            LiveTennisChartingMatchTool(client=client),
         ]

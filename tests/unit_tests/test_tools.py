@@ -9,12 +9,21 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool, ToolException
 
 from langchain_livetennis import (
+    LiveTennisArchiveCareerTool,
+    LiveTennisArchiveMatchesTool,
+    LiveTennisArchivePlayersTool,
+    LiveTennisChartingMatchTool,
+    LiveTennisChartingPlayerTool,
     LiveTennisClient,
     LiveTennisFixturesTool,
+    LiveTennisH2HTool,
     LiveTennisMatchesTool,
+    LiveTennisMatchStatisticsTool,
     LiveTennisMatchTool,
+    LiveTennisPlayerRankingsTool,
     LiveTennisPlayerSearchTool,
     LiveTennisPlayerTool,
+    LiveTennisRankingsTool,
     LiveTennisScoreTool,
 )
 
@@ -25,7 +34,29 @@ ALL_TOOLS = [
     LiveTennisPlayerSearchTool,
     LiveTennisPlayerTool,
     LiveTennisFixturesTool,
+    LiveTennisH2HTool,
+    LiveTennisArchiveMatchesTool,
+    LiveTennisArchivePlayersTool,
+    LiveTennisArchiveCareerTool,
+    LiveTennisRankingsTool,
+    LiveTennisPlayerRankingsTool,
+    LiveTennisMatchStatisticsTool,
+    LiveTennisChartingPlayerTool,
+    LiveTennisChartingMatchTool,
 ]
+
+#: Tools that need a paid plan, and the plan their description must name.
+GATED_TOOLS = {
+    LiveTennisH2HTool: "BASIC",
+    LiveTennisArchiveMatchesTool: "BASIC",
+    LiveTennisArchivePlayersTool: "BASIC",
+    LiveTennisArchiveCareerTool: "BASIC",
+    LiveTennisRankingsTool: "PRO",
+    LiveTennisPlayerRankingsTool: "ULTRA",
+    LiveTennisMatchStatisticsTool: "ULTRA",
+    LiveTennisChartingPlayerTool: "ULTRA",
+    LiveTennisChartingMatchTool: "ULTRA",
+}
 
 
 @pytest.mark.parametrize("tool_cls", ALL_TOOLS)
@@ -157,6 +188,131 @@ def test_upgrade_required_surfaces_as_a_tool_exception(
 ) -> None:
     with pytest.raises(ToolException, match="403"):
         LiveTennisMatchesTool(client=client).invoke({"status": "completed"})
+
+
+@pytest.mark.parametrize("tool_cls", list(GATED_TOOLS))
+def test_gated_tools_name_their_plan(
+    tool_cls: type[BaseTool], client: LiveTennisClient
+) -> None:
+    # An agent must be able to explain a 403, so the gate lives in the
+    # model-visible description, not only in the docs.
+    tool = tool_cls(client=client)
+    assert GATED_TOOLS[tool_cls] in tool.description
+    assert "403" in tool.description
+
+
+def test_matches_filters_reach_the_server(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisMatchesTool(client=client).invoke(
+            {"status": "live", "player": [7710], "country": "pol"}
+        )
+    )
+    assert [m["id"] for m in payload["data"]] == [18954]
+
+
+def test_fixtures_tour_filter(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisFixturesTool(client=client).invoke({"tour": "atp", "limit": 1})
+    )
+    assert payload["data"][0]["tour"] == "atp"
+
+
+def test_h2h_invoke(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisH2HTool(client=client).invoke({"p1": "alcaraz", "p2": "sinner"})
+    )
+    assert payload["totals"] == {"p1_wins": 6, "p2_wins": 4, "undecided": 0}
+
+
+def test_h2h_short_fragment_is_rejected_before_the_call(
+    client: LiveTennisClient,
+) -> None:
+    with pytest.raises(Exception, match="validation error"):
+        LiveTennisH2HTool(client=client).invoke({"p1": "al", "p2": "sinner"})
+
+
+def test_archive_matches_invoke(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisArchiveMatchesTool(client=client).invoke(
+            {"name": "borg", "tour": "atp", "round_code": "F"}
+        )
+    )
+    assert payload["data"][0]["winner"]["name"] == "Bjorn Borg"
+
+
+def test_archive_matches_args_expose_round_enum(client: LiveTennisClient) -> None:
+    schema = LiveTennisArchiveMatchesTool(
+        client=client
+    ).tool_call_schema.model_json_schema()
+    defs = json.dumps(schema)
+    for value in ("F", "SF", "QF", "R16", "R128"):
+        assert f'"{value}"' in defs
+
+
+def test_archive_players_invoke(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisArchivePlayersTool(client=client).invoke({"name": "borg"})
+    )
+    assert payload["data"][0]["career_high_rank"] == 1
+
+
+def test_archive_career_invoke(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisArchiveCareerTool(client=client).invoke({"name": "borg"})
+    )
+    assert payload["record"] == {"wins": 654, "losses": 140}
+
+
+def test_rankings_invoke(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisRankingsTool(client=client).invoke({"system": "atp", "limit": 2})
+    )
+    assert [r["rank"] for r in payload["data"]] == [1, 2]
+
+
+def test_rankings_system_is_required(client: LiveTennisClient) -> None:
+    with pytest.raises(Exception, match="validation error"):
+        LiveTennisRankingsTool(client=client).invoke({})
+
+
+def test_rankings_listing_has_no_utr(client: LiveTennisClient) -> None:
+    # UTR is a rating, not a ranking - only the per-player tool offers it.
+    listing = LiveTennisRankingsTool(client=client).tool_call_schema
+    per_player = LiveTennisPlayerRankingsTool(client=client).tool_call_schema
+    assert '"utr"' not in json.dumps(listing.model_json_schema())
+    assert '"utr"' in json.dumps(per_player.model_json_schema())
+
+
+def test_player_rankings_invoke(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisPlayerRankingsTool(client=client).invoke(
+            {"player": [4021, 5533], "as_of": "2026-08-03"}
+        )
+    )
+    assert {r["player_id"] for r in payload["data"]} == {4021, 5533}
+
+
+def test_match_statistics_invoke(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisMatchStatisticsTool(client=client).invoke({"match_id": 18953})
+    )
+    assert payload["players"]["p1"]["measured"]["aces"] == 7
+
+
+def test_charting_player_invoke(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisChartingPlayerTool(client=client).invoke(
+            {"name": "federer", "gender": "men"}
+        )
+    )
+    assert payload["matches_charted"] == 622
+
+
+def test_charting_match_invoke(client: LiveTennisClient) -> None:
+    payload = json.loads(
+        LiveTennisChartingMatchTool(client=client).invoke({"charting_match_id": 77001})
+    )
+    assert payload["players"] == {"p1": "Roger Federer", "p2": "Rafael Nadal"}
 
 
 def test_tool_builds_its_own_client_from_a_key() -> None:

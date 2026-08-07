@@ -7,6 +7,7 @@ junior Grand Slam draws, exposed as LangChain tools.
 from ._client import LiveTennisClient
 from ._version import __version__
 from .exceptions import (
+    LiveTennisAbuseThrottled,
     LiveTennisAPIError,
     LiveTennisAuthError,
     LiveTennisBadRequest,
@@ -27,6 +28,7 @@ from .tools import (
 
 __all__ = [
     "LiveTennisAPIError",
+    "LiveTennisAbuseThrottled",
     "LiveTennisAuthError",
     "LiveTennisBadRequest",
     "LiveTennisClient",

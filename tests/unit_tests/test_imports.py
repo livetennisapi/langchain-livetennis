@@ -6,6 +6,7 @@ import langchain_livetennis
 
 EXPECTED = [
     "LiveTennisAPIError",
+    "LiveTennisAbuseThrottled",
     "LiveTennisAuthError",
     "LiveTennisBadRequest",
     "LiveTennisClient",

@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from langchain_livetennis import (
+    LiveTennisAbuseThrottled,
     LiveTennisAuthError,
     LiveTennisBadRequest,
     LiveTennisClient,
@@ -146,6 +147,74 @@ def test_rate_limit_carries_retry_after() -> None:
     with pytest.raises(LiveTennisRateLimited) as excinfo:
         api.list_fixtures()
     assert excinfo.value.retry_after == 7.0
+
+
+def test_minute_rate_limit_has_no_daily_reset() -> None:
+    def limited(request: httpx.Request) -> httpx.Response:  # noqa: ARG001
+        return httpx.Response(429, json={"error": "rate_limited"})
+
+    api = LiveTennisClient(
+        api_key="k",
+        max_retries=0,
+        client=httpx.Client(transport=httpx.MockTransport(limited)),
+    )
+    with pytest.raises(LiveTennisRateLimited) as excinfo:
+        api.list_fixtures()
+    assert excinfo.value.resets_at is None
+
+
+def test_daily_rate_limit_carries_resets_at_and_is_not_retried() -> None:
+    calls: list[int] = []
+
+    def daily(request: httpx.Request) -> httpx.Response:  # noqa: ARG001
+        calls.append(1)
+        return httpx.Response(
+            429,
+            json={
+                "error": "rate_limited",
+                "scope": "day",
+                "limit_per_day": 100,
+                "resets_at": "2026-08-07T21:00:00Z",
+            },
+        )
+
+    api = LiveTennisClient(
+        api_key="k",
+        max_retries=3,
+        client=httpx.Client(transport=httpx.MockTransport(daily)),
+    )
+    with pytest.raises(LiveTennisRateLimited) as excinfo:
+        api.list_fixtures()
+    assert excinfo.value.resets_at == "2026-08-07T21:00:00Z"
+    assert "2026-08-07T21:00:00Z" in str(excinfo.value)
+    assert not isinstance(excinfo.value, LiveTennisAbuseThrottled)
+    assert len(calls) == 1
+
+
+def test_abuse_throttle_carries_epoch_and_is_not_retried() -> None:
+    calls: list[int] = []
+
+    def blocked(request: httpx.Request) -> httpx.Response:  # noqa: ARG001
+        calls.append(1)
+        return httpx.Response(
+            429, json={"error": "abuse_throttled", "retry_at_epoch": 1786600000}
+        )
+
+    api = LiveTennisClient(
+        api_key="k",
+        max_retries=3,
+        client=httpx.Client(transport=httpx.MockTransport(blocked)),
+    )
+    with pytest.raises(LiveTennisAbuseThrottled) as excinfo:
+        api.list_fixtures()
+    assert excinfo.value.retry_at_epoch == 1786600000
+    assert "1786600000" in str(excinfo.value)
+    assert len(calls) == 1
+
+
+def test_abuse_throttle_is_still_a_rate_limit() -> None:
+    # A caller that only catches LiveTennisRateLimited keeps working.
+    assert issubclass(LiveTennisAbuseThrottled, LiveTennisRateLimited)
 
 
 def test_server_error_is_retried_then_raised() -> None:

@@ -18,6 +18,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install uv
+      # Product facts (quotas, URLs) must match ground truth.
+      - run: sh scripts/truthcheck.sh
       - run: make lint
       - run: make check
       # Unit tests run with the network blocked; integration tests

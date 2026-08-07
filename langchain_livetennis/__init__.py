@@ -1,7 +1,8 @@
 """LangChain integration for the [Live Tennis API](https://livetennisapi.com).
 
-Real-time tennis scores, players and fixtures for ATP, WTA, Challenger, ITF and
-junior Grand Slam draws, exposed as LangChain tools.
+Live scores, players, fixtures, head-to-head, rankings, in-play statistics and
+a 1968-2022 results archive for ATP, WTA, Challenger, ITF and juniors, exposed
+as LangChain tools.
 """
 
 from ._client import LiveTennisClient
@@ -18,26 +19,44 @@ from .exceptions import (
 )
 from .toolkit import LiveTennisToolkit
 from .tools import (
+    LiveTennisArchiveCareerTool,
+    LiveTennisArchiveMatchesTool,
+    LiveTennisArchivePlayersTool,
+    LiveTennisChartingMatchTool,
+    LiveTennisChartingPlayerTool,
     LiveTennisFixturesTool,
+    LiveTennisH2HTool,
     LiveTennisMatchesTool,
+    LiveTennisMatchStatisticsTool,
     LiveTennisMatchTool,
+    LiveTennisPlayerRankingsTool,
     LiveTennisPlayerSearchTool,
     LiveTennisPlayerTool,
+    LiveTennisRankingsTool,
     LiveTennisScoreTool,
 )
 
 __all__ = [
     "LiveTennisAPIError",
     "LiveTennisAbuseThrottled",
+    "LiveTennisArchiveCareerTool",
+    "LiveTennisArchiveMatchesTool",
+    "LiveTennisArchivePlayersTool",
     "LiveTennisAuthError",
     "LiveTennisBadRequest",
+    "LiveTennisChartingMatchTool",
+    "LiveTennisChartingPlayerTool",
     "LiveTennisClient",
     "LiveTennisFixturesTool",
+    "LiveTennisH2HTool",
+    "LiveTennisMatchStatisticsTool",
     "LiveTennisMatchTool",
     "LiveTennisMatchesTool",
     "LiveTennisNotFound",
+    "LiveTennisPlayerRankingsTool",
     "LiveTennisPlayerSearchTool",
     "LiveTennisPlayerTool",
+    "LiveTennisRankingsTool",
     "LiveTennisRateLimited",
     "LiveTennisScoreTool",
     "LiveTennisServerError",

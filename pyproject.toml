@@ -7,7 +7,7 @@ name = "langchain-livetennis"
 description = "Integration package connecting the Live Tennis API and LangChain"
 license = { text = "MIT" }
 readme = "README.md"
-authors = [{ name = "Live Tennis API", email = "hello@livetennisapi.com" }]
+authors = [{ name = "Synapse Research Ltd", email = "hello@livetennisapi.com" }]
 keywords = ["langchain", "tennis", "live scores", "atp", "wta", "tools", "agents"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -36,6 +36,7 @@ Documentation = "https://docs.livetennisapi.com"
 Repository = "https://github.com/livetennisapi/langchain-livetennis"
 Issues = "https://github.com/livetennisapi/langchain-livetennis/issues"
 Changelog = "https://github.com/livetennisapi/langchain-livetennis/blob/main/CHANGELOG.md"
+Author = "https://synapsereality.io"
 
 [dependency-groups]
 test = [

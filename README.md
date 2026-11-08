@@ -56,7 +56,14 @@ from langchain_livetennis import LiveTennisToolkit
 agent = create_agent(model="claude-sonnet-4-6", tools=LiveTennisToolkit().get_tools())
 
 agent.invoke(
-    {"messages": [{"role": "user", "content": "Who is leading the live ATP matches right now?"}]}
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Who is leading the live ATP matches right now?",
+            }
+        ]
+    }
 )
 ```
 

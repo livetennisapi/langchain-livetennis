@@ -45,7 +45,7 @@ test = [
     "pytest-socket>=0.7.0,<1.0.0",
     "langchain>=1.0.0,<2.0.0",
 ]
-lint = ["ruff>=0.13.1,<0.16.0"]
+lint = ["ruff>=0.13.1,<0.18.0"]
 typing = ["mypy>=1.15.0,<2.5.0"]
 
 [tool.hatch.version]
@@ -83,6 +83,8 @@ ignore = [
     "PLR0913", # Too many arguments
     "PLR0915", # Too many statements
     "PLR0911", # Too many return statements
+    "PLR0917", # Too many positional arguments, same call as PLR0913
+    "CPY001",  # No per-file copyright headers in this project, LICENSE covers it
     "ANN401",  # Dynamically typed expressions (the API payload is untyped JSON)
     "TRY003",  # Long messages: the error text is the useful part for an agent
     # Exception names mirror the official `livetennisapi` SDK (Unauthorized,
